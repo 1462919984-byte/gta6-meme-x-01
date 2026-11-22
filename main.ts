@@ -12,20 +12,43 @@
 //
 //   mkdir -p out && MAKEFUN_BOT_DIR=. MAKEFUN_OUTPUT_DIR=out node main.ts
 //
-// POST.json holds a placeholder until the meme is posted on X; replace it
-// with the post's address (https://x.com/<handle>/status/<id>) before
-// submitting, or the gate refuses the entry.
+// POST.json names the post's address (https://x.com/<handle>/status/<id>);
+// the gate refuses the entry if the address is a placeholder or unreadable.
 
-import { copyFileSync, mkdirSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const BOT_DIR = process.env.MAKEFUN_BOT_DIR ?? '/bot';
 const OUTPUT_DIR = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
-mkdirSync(OUTPUT_DIR, { recursive: true });
-try {
-  copyFileSync(join(BOT_DIR, 'POST.json'), join(OUTPUT_DIR, 'POST.json'));
-} catch (err) {
-  console.error(`POST.json could not be copied from ${BOT_DIR}: ${(err as Error).message}`);
-  process.exit(1);
+/**
+ * Read POST.json and confirm it is valid JSON naming a post address.
+ * A malformed file fails here with a clear message instead of reaching
+ * the gate, where it would be refused as unreadable.
+ */
+function readPostFile(botDir: string): { url: string } {
+  const raw = readFileSync(join(botDir, 'POST.json'), 'utf8');
+  const parsed: unknown = JSON.parse(raw);
+  if (typeof parsed !== 'object' || parsed === null || typeof (parsed as { url?: unknown }).url !== 'string') {
+    throw new Error('POST.json must be a JSON object with a string "url" field');
+  }
+  return parsed as { url: string };
 }
+
+/** Copy the post file from the bot directory into the output directory. */
+function copyPostFile(botDir: string, outputDir: string): void {
+  readPostFile(botDir);
+  mkdirSync(outputDir, { recursive: true });
+  copyFileSync(join(botDir, 'POST.json'), join(outputDir, 'POST.json'));
+}
+
+function main(): void {
+  try {
+    copyPostFile(BOT_DIR, OUTPUT_DIR);
+  } catch (err) {
+    console.error(`POST.json could not be copied from ${BOT_DIR}: ${(err as Error).message}`);
+    process.exit(1);
+  }
+}
+
+main();
